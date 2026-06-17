@@ -1,0 +1,10 @@
+{
+  "name": "ROA MTCLOG",
+  "short_name": "ROA MTC",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f6fb",
+  "theme_color": "#00009E",
+  "description": "Sistema ROA - Relatório de Ocorrência de Avaria MTC LOG",
+  "icons": []
+}

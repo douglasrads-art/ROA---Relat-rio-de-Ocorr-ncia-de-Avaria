@@ -4,11 +4,36 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ROA - Controle de Avarias MTC</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#00009E">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ROA MTC">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js">if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js">if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js">if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
 
   <style>
     :root {
@@ -73,6 +98,7 @@
       z-index:18;
     }
     nav button, .btn {
+      touch-action: manipulation;
       border:0;
       border-radius:12px;
       padding:11px 14px;
@@ -110,6 +136,7 @@
     .grid-3 { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:14px; }
     label { display:block; font-weight:bold; margin-bottom:6px; font-size:14px; }
     input, select, textarea {
+      -webkit-user-select: text;
       width:100%;
       padding:12px;
       border:1px solid var(--borda);
@@ -255,7 +282,8 @@
       .logos { width:100%; justify-content:center; }
       .grid, .grid-3, .dashGrid, .chartGrid, .detailGrid { grid-template-columns:1fr; }
       .infoGrid { grid-template-columns:1fr; }
-      nav button, .btn { width:100%; }
+      nav button, .btn {
+      touch-action: manipulation; width:100%; }
       .hero h2 { font-size:28px; }
       th, td { font-size:12px; }
     }
@@ -292,7 +320,7 @@
   <section id="home" class="active">
     <div class="card hero">
       <h2>ROA</h2>
-      <h3>Relatório de Ocorrência de Avaria</h3>
+      <h3>Relatório de Ocorrência de Avaria</h3><p class="small">Versão online conectada ao Supabase.</p>
       <p>Registre avarias identificadas no estoque, fábrica, picking, conferência, doca ou áreas operacionais. O sistema gera controle interno, PDF e etiqueta para identificação do material.</p>
       <div class="actions" style="justify-content:center;">
         <button class="btn success" onclick="showPage('novo', document.querySelectorAll('nav button')[1])">Registrar Novo ROA</button>
@@ -459,7 +487,7 @@
         <div><label>Template ID</label><input id="emailTemplateId" /></div>
         <div><label>Destinatários</label><textarea id="emailDestinatarios"></textarea></div>
       </div>
-      <div class="actions"><button class="btn success" onclick="salvarConfigEmail()">Salvar Configuração</button></div>
+      <div class="actions"><button class="btn success" onclick="salvarConfigEmail()">Salvar Configuração</button><button class="btn secondary" onclick="testarConexaoSupabase()">Testar Banco Online</button></div>
       <div class="alert warn">No EmailJS use: Assunto = {assunto}, To Email = {to_email}, Content = {corpo}.</div>
     </div>
   </section>
@@ -474,6 +502,7 @@ const SENHA_ADMIN = "131061";
 const SUPABASE_URL = "https://tsyrdplpqbvtengeswnx.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzeXJkcGxwcWJ2dGVuZ2Vzd254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2NDk1MDUsImV4cCI6MjA5NzIyNTUwNX0.HBCZSznvr0ksBSqdxlAQwBU11BriLWwcfTT3KN9-Sec";
 const USE_SUPABASE = true;
+const APP_PUBLIC_URL = "https://douglasrads-art.github.io/ROA-MTCLOG/";
 const DESTINATARIOS_PADRAO = [
   "Douglas.MTC@akzonobel.com",
   "Gabriel.MTC@akzonobel.com",
@@ -503,7 +532,10 @@ async function supabaseRequest(path, options = {}) {
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Supabase ${res.status}: ${txt}`);
+    let dica = "";
+    if (txt.includes("relation") || txt.includes("does not exist")) dica = " | Execute o supabase_sql.sql no SQL Editor.";
+    if (txt.includes("row-level security") || txt.includes("violates row-level security")) dica = " | Execute as políticas RLS do supabase_sql.sql.";
+    throw new Error(`Supabase ${res.status}: ${txt}${dica}`);
   }
 
   if (res.status === 204) return null;
@@ -559,7 +591,7 @@ async function dbGet(name, key) {
 
 async function dbPut(name, obj) {
   if (name === "roas") {
-    await supabaseRequest("roa_registros", {
+    await supabaseRequest("roa_registros?on_conflict=roa", {
       method:"POST",
       prefer:"resolution=merge-duplicates,return=representation",
       body: JSON.stringify({
@@ -574,7 +606,7 @@ async function dbPut(name, obj) {
 
   if (name === "deleted") {
     obj.excluidoEm = obj.excluidoEm || agoraBR();
-    await supabaseRequest("roa_registros", {
+    await supabaseRequest("roa_registros?on_conflict=roa", {
       method:"POST",
       prefer:"resolution=merge-duplicates,return=representation",
       body: JSON.stringify({
@@ -588,7 +620,7 @@ async function dbPut(name, obj) {
   }
 
   if (name === "materiais") {
-    await supabaseRequest("roa_materiais_complementares", {
+    await supabaseRequest("roa_materiais_complementares?on_conflict=material", {
       method:"POST",
       prefer:"resolution=merge-duplicates,return=representation",
       body: JSON.stringify(obj)
@@ -787,8 +819,7 @@ async function salvarROA() {
 
 
 function urlPublicaROA(roa) {
-  const base = window.location.origin + window.location.pathname;
-  return base + "?roa=" + encodeURIComponent(roa);
+  return APP_PUBLIC_URL + "?roa=" + encodeURIComponent(roa);
 }
 
 async function abrirROASomenteLeituraPelaURL() {
@@ -796,30 +827,48 @@ async function abrirROASomenteLeituraPelaURL() {
   const roa = params.get("roa") || params.get("id");
   if (!roa) return false;
 
-  const reg = await dbGet("roas", roa);
-  if (!reg) {
+  try {
+    const reg = await dbGet("roas", roa);
+
+    document.querySelector("nav").style.display = "none";
+
+    if (!reg) {
+      document.querySelector("main").innerHTML = `
+        <section class="active">
+          <div class="card hero">
+            <h2>ROA não localizado</h2>
+            <p>O QR Code abriu corretamente, porém o registro ${roa} não foi encontrado no banco online.</p>
+            <p class="small">Confirme se o ROA foi registrado após a conexão com o Supabase e se as tabelas/políticas foram criadas.</p>
+          </div>
+        </section>`;
+      return true;
+    }
+
+    await abrirDetalheROA(roa);
+
+    const header = document.querySelector(".detailHeader .actions");
+    if (header) {
+      header.innerHTML = `<button class="btn secondary" onclick="baixarPDFDetalhe()">Gerar PDF / Etiqueta</button>`;
+    }
+
+    document.querySelectorAll("#detalhe input, #detalhe textarea, #detalhe select").forEach(el => el.disabled = true);
+
+    const title = document.getElementById("detalheTitulo");
+    if (title) title.innerText = reg.roa + " - Consulta do ROA";
+
+    return true;
+  } catch (e) {
+    document.querySelector("nav").style.display = "none";
     document.querySelector("main").innerHTML = `
       <section class="active">
         <div class="card hero">
-          <h2>ROA não localizado</h2>
-          <p>Não encontramos o registro ${roa} no banco online.</p>
+          <h2>Erro ao abrir ROA</h2>
+          <p>Não foi possível consultar o banco online.</p>
+          <p class="small">${String(e.message || e)}</p>
         </div>
       </section>`;
-    document.querySelector("nav").style.display = "none";
     return true;
   }
-
-  document.querySelector("nav").style.display = "none";
-  await abrirDetalheROA(roa);
-
-  const header = document.querySelector(".detailHeader .actions");
-  if (header) {
-    header.innerHTML = `<button class="btn secondary" onclick="baixarPDFDetalhe()">Gerar PDF / Etiqueta</button>`;
-  }
-
-  document.querySelectorAll("#detalhe input, #detalhe textarea, #detalhe select").forEach(el => el.disabled = true);
-
-  return true;
 }
 
 
@@ -888,36 +937,61 @@ Favor acessar a Área Restrita - Análise Técnica do sistema ROA para:
 E-mail gerado automaticamente pelo Sistema ROA - Controle de Avarias MTC.`;
 }
 
-async function confirmarROA() {
-  msg("msgNovo", "Confirmando ROA. Aguarde...", "warn");
-  const reg = await salvarROA();
-  if (!reg) return;
-
-  const cfg = await carregarConfigEmailObj();
-  if (!cfg.publicKey || !cfg.serviceId || !cfg.templateId) {
-    msg("msgNovo", "ROA registrado. E-mail não enviado porque o EmailJS não está configurado.", "warn");
-    limparFormulario(false);
-    await iniciarFormulario();
-    return;
+async function testarConexaoSupabase() {
+  try {
+    await supabaseRequest("roa_registros?select=roa&limit=1", {method:"GET"});
+    alert("Conexão Supabase OK. Banco online respondendo.");
+    return true;
+  } catch (e) {
+    alert("Falha na conexão Supabase: " + (e.message || e));
+    return false;
   }
+}
 
+async function enviarEmailROA(reg, cfg) {
+  if (!cfg.publicKey || !cfg.serviceId || !cfg.templateId) return {ok:false, motivo:"EmailJS não configurado."};
   try {
     emailjs.init({ publicKey: cfg.publicKey });
-    await emailjs.send(cfg.serviceId, cfg.templateId, {
+    const envio = emailjs.send(cfg.serviceId, cfg.templateId, {
       assunto: assuntoROA(reg),
       to_email: (cfg.destinatarios || DESTINATARIOS_PADRAO.join(",")).replace(/\n/g,","),
       reply_to: "douglas.mtc@akzonobel.com",
       corpo: montarCorpoEmail(reg),
       message: montarCorpoEmail(reg),
       name: "Sistema ROA",
-      roa: reg.roa, material: reg.material, lote: reg.lote, descricao: reg.descricao
+      roa: reg.roa,
+      material: reg.material,
+      lote: reg.lote,
+      descricao: reg.descricao
     });
-    msg("msgNovo", "ROA confirmado e e-mail enviado com sucesso.", "ok");
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Tempo limite no envio do e-mail.")), 12000));
+    await Promise.race([envio, timeout]);
+    return {ok:true};
+  } catch (e) {
+    return {ok:false, motivo: e.text || e.message || String(e)};
+  }
+}
+
+
+async function confirmarROA() {
+  msg("msgNovo", "Salvando ROA no banco online. Aguarde...", "warn");
+
+  const reg = await salvarROA();
+  if (!reg) return;
+
+  msg("msgNovo", "ROA salvo no banco online com sucesso: " + reg.roa + ". Tentando enviar e-mail...", "ok");
+
+  try {
+    const cfg = await carregarConfigEmailObj();
+    const email = await enviarEmailROA(reg, cfg);
+
+    if (email.ok) msg("msgNovo", "ROA salvo no banco online e e-mail enviado com sucesso: " + reg.roa, "ok");
+    else msg("msgNovo", "ROA salvo no banco online. E-mail não enviado: " + email.motivo, "warn");
+
     limparFormulario(false);
     await iniciarFormulario();
-  } catch(e) {
-    console.error(e);
-    msg("msgNovo", "ROA registrado, mas houve erro no envio do e-mail: " + (e.text || e.message || e), "err");
+  } catch (e) {
+    msg("msgNovo", "ROA salvo no banco online. Houve falha apenas no pós-processamento/e-mail: " + (e.message || e), "warn");
   }
 }
 
@@ -1406,6 +1480,11 @@ window.onload = async function() {
   const modoLeitura = await abrirROASomenteLeituraPelaURL();
   if (modoLeitura) return;
 };
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>
