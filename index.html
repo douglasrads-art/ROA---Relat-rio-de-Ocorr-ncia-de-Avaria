@@ -519,28 +519,42 @@ async function abrirDB() {
 }
 
 async function supabaseRequest(path, options = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...options,
-    headers: {
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": options.prefer || "return=representation",
-      ...(options.headers || {})
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": options.prefer || "return=representation",
+        ...(options.headers || {})
+      }
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const txt = await res.text();
+      let dica = "";
+      if (txt.includes("relation") || txt.includes("does not exist")) dica = " | Execute o supabase_sql.sql no SQL Editor.";
+      if (txt.includes("row-level security") || txt.includes("violates row-level security")) dica = " | Execute as políticas RLS do supabase_sql.sql.";
+      throw new Error(`Supabase ${res.status}: ${txt}${dica}`);
     }
-  });
 
-  if (!res.ok) {
-    const txt = await res.text();
-    let dica = "";
-    if (txt.includes("relation") || txt.includes("does not exist")) dica = " | Execute o supabase_sql.sql no SQL Editor.";
-    if (txt.includes("row-level security") || txt.includes("violates row-level security")) dica = " | Execute as políticas RLS do supabase_sql.sql.";
-    throw new Error(`Supabase ${res.status}: ${txt}${dica}`);
+    if (res.status === 204) return null;
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e.name === "AbortError") {
+      throw new Error("Tempo limite ao conectar no Supabase. Verifique a internet, URL do Supabase e se o GitHub Pages atualizou o arquivo.");
+    }
+    throw e;
   }
-
-  if (res.status === 204) return null;
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
 }
 
 async function dbGetAll(name) {
@@ -712,23 +726,48 @@ function msg(id, texto, tipo) {
 }
 
 async function buscarMaterial() {
-  const codigo = val("material");
+  const codigo = val("material").trim();
   const desc = document.getElementById("descricao");
   const curva = document.getElementById("curva");
   const warn = document.getElementById("materialNaoEncontrado");
   const box = document.getElementById("cadastroManualBox");
-  if (!codigo) { desc.value=""; curva.value=""; warn.classList.add("hidden"); box.classList.add("hidden"); return; }
-  const comp = await getComplementarObj();
-  if (BASE_OFICIAL[codigo]) {
-    desc.value = BASE_OFICIAL[codigo].descricao; curva.value = BASE_OFICIAL[codigo].curva; desc.readOnly = true;
-    warn.classList.add("hidden"); box.classList.add("hidden");
-  } else if (comp[codigo]) {
-    desc.value = comp[codigo].descricao; curva.value = comp[codigo].curva || "Não cadastrada"; desc.readOnly = true;
-    warn.classList.add("hidden"); box.classList.add("hidden");
-  } else {
-    desc.value = val("descricaoManual"); curva.value = "Não cadastrada"; desc.readOnly = false;
-    warn.classList.remove("hidden"); box.classList.remove("hidden");
+
+  if (!codigo) {
+    desc.value = "";
+    curva.value = "";
+    warn.classList.add("hidden");
+    box.classList.add("hidden");
+    return;
   }
+
+  if (typeof BASE_OFICIAL !== "undefined" && BASE_OFICIAL[codigo]) {
+    desc.value = BASE_OFICIAL[codigo].descricao || "";
+    curva.value = BASE_OFICIAL[codigo].curva || "Não cadastrada";
+    desc.readOnly = true;
+    warn.classList.add("hidden");
+    box.classList.add("hidden");
+    return;
+  }
+
+  try {
+    const comp = await getComplementarObj();
+    if (comp[codigo]) {
+      desc.value = comp[codigo].descricao || "";
+      curva.value = comp[codigo].curva || "Não cadastrada";
+      desc.readOnly = true;
+      warn.classList.add("hidden");
+      box.classList.add("hidden");
+      return;
+    }
+  } catch (e) {
+    console.warn("Falha ao consultar base complementar:", e);
+  }
+
+  desc.value = val("descricaoManual");
+  curva.value = "Não cadastrada";
+  desc.readOnly = false;
+  warn.classList.remove("hidden");
+  box.classList.remove("hidden");
 }
 
 function descricaoManualChange() { document.getElementById("descricao").value = val("descricaoManual"); }
@@ -808,69 +847,27 @@ async function salvarBaseComplementarSeNecessario(reg) {
 }
 
 async function salvarROA() {
-  const erro = validarFormulario();
-  if (erro) { msg("msgNovo", erro, "err"); return null; }
-  const reg = await coletarFormulario();
-  await salvarBaseComplementarSeNecessario(reg);
-  await dbPut("roas", reg);
-  msg("msgNovo", "ROA registrado com sucesso: " + reg.roa, "ok");
-  return reg;
-}
-
-
-function urlPublicaROA(roa) {
-  return APP_PUBLIC_URL + "?roa=" + encodeURIComponent(roa);
-}
-
-async function abrirROASomenteLeituraPelaURL() {
-  const params = new URLSearchParams(window.location.search);
-  const roa = params.get("roa") || params.get("id");
-  if (!roa) return false;
-
   try {
-    const reg = await dbGet("roas", roa);
-
-    document.querySelector("nav").style.display = "none";
-
-    if (!reg) {
-      document.querySelector("main").innerHTML = `
-        <section class="active">
-          <div class="card hero">
-            <h2>ROA não localizado</h2>
-            <p>O QR Code abriu corretamente, porém o registro ${roa} não foi encontrado no banco online.</p>
-            <p class="small">Confirme se o ROA foi registrado após a conexão com o Supabase e se as tabelas/políticas foram criadas.</p>
-          </div>
-        </section>`;
-      return true;
+    const erro = validarFormulario();
+    if (erro) {
+      msg("msgNovo", erro, "err");
+      return null;
     }
 
-    await abrirDetalheROA(roa);
+    const reg = await coletarFormulario();
+    await salvarBaseComplementarSeNecessario(reg);
 
-    const header = document.querySelector(".detailHeader .actions");
-    if (header) {
-      header.innerHTML = `<button class="btn secondary" onclick="baixarPDFDetalhe()">Gerar PDF / Etiqueta</button>`;
-    }
+    msg("msgNovo", "Enviando ROA para o banco online...", "warn");
+    await dbPut("roas", reg);
 
-    document.querySelectorAll("#detalhe input, #detalhe textarea, #detalhe select").forEach(el => el.disabled = true);
-
-    const title = document.getElementById("detalheTitulo");
-    if (title) title.innerText = reg.roa + " - Consulta do ROA";
-
-    return true;
+    msg("msgNovo", "ROA registrado com sucesso no banco online: " + reg.roa, "ok");
+    return reg;
   } catch (e) {
-    document.querySelector("nav").style.display = "none";
-    document.querySelector("main").innerHTML = `
-      <section class="active">
-        <div class="card hero">
-          <h2>Erro ao abrir ROA</h2>
-          <p>Não foi possível consultar o banco online.</p>
-          <p class="small">${String(e.message || e)}</p>
-        </div>
-      </section>`;
-    return true;
+    console.error(e);
+    msg("msgNovo", "Erro ao salvar no banco online: " + (e.message || e), "err");
+    return null;
   }
 }
-
 
 function assuntoROA(reg) {
   return `Relatório de Ocorrência de Avaria | ${reg.roa} | Material ${reg.material} | Lote ${reg.lote}`;
@@ -974,24 +971,26 @@ async function enviarEmailROA(reg, cfg) {
 
 
 async function confirmarROA() {
-  msg("msgNovo", "Salvando ROA no banco online. Aguarde...", "warn");
+  msg("msgNovo", "Validando e salvando ROA no banco online. Aguarde...", "warn");
 
   const reg = await salvarROA();
   if (!reg) return;
-
-  msg("msgNovo", "ROA salvo no banco online com sucesso: " + reg.roa + ". Tentando enviar e-mail...", "ok");
 
   try {
     const cfg = await carregarConfigEmailObj();
     const email = await enviarEmailROA(reg, cfg);
 
-    if (email.ok) msg("msgNovo", "ROA salvo no banco online e e-mail enviado com sucesso: " + reg.roa, "ok");
-    else msg("msgNovo", "ROA salvo no banco online. E-mail não enviado: " + email.motivo, "warn");
+    if (email.ok) {
+      msg("msgNovo", "ROA salvo no banco online e e-mail enviado com sucesso: " + reg.roa, "ok");
+    } else {
+      msg("msgNovo", "ROA salvo no banco online. E-mail não enviado: " + email.motivo, "warn");
+    }
 
     limparFormulario(false);
     await iniciarFormulario();
   } catch (e) {
-    msg("msgNovo", "ROA salvo no banco online. Houve falha apenas no pós-processamento/e-mail: " + (e.message || e), "warn");
+    console.error(e);
+    msg("msgNovo", "ROA salvo no banco online. Falha apenas no envio de e-mail: " + (e.message || e), "warn");
   }
 }
 
